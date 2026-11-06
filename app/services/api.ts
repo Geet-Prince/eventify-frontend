@@ -79,6 +79,21 @@ export const clearAuthSession = (): void => {
   }
 };
 
+// Custom API Error with HTTP status preservation
+export class ApiError extends Error {
+  status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+  }
+}
+
+// Password validation policy regex:
+// Min 8 chars, at least 1 lowercase, 1 uppercase, 1 digit, 1 special character
+export const PASSWORD_REGEX =
+  /^(?=.*[0-9])(?=.*[a-z])(?=.*[A-Z])(?=.*[@#$%^&+=!_~`*?|:;"'<>,./\\-]).{8,100}$/;
+
 // Helper to extract clean error message from response
 async function extractErrorMessage(response: Response, fallback: string): Promise<string> {
   try {
@@ -245,7 +260,6 @@ export interface LoginResponse {
 }
 
 export interface RegisterResponse {
-  verificationToken?: string;
   message?: string;
   [key: string]: unknown;
 }
@@ -260,10 +274,14 @@ export async function registerClub(name: string, email: string, password: string
 
   if (!response.ok) {
     const msg = await extractErrorMessage(response, 'Registration failed.');
-    throw new Error(msg);
+    throw new ApiError(msg, response.status);
   }
 
-  return response.json();
+  try {
+    return await response.json();
+  } catch {
+    return { message: 'Registration submitted successfully.' };
+  }
 }
 
 export async function verifyEmail(verificationToken: string): Promise<string> {
@@ -271,13 +289,15 @@ export async function verifyEmail(verificationToken: string): Promise<string> {
     `${API_BASE_URL}/auth/verify?token=${encodeURIComponent(verificationToken.trim())}`,
     {
       method: 'GET',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        Accept: 'application/json',
+      },
     }
   );
 
   if (!response.ok) {
-    const msg = await extractErrorMessage(response, 'Email verification failed or token is invalid.');
-    throw new Error(msg);
+    const msg = await extractErrorMessage(response, 'Invalid or expired verification token.');
+    throw new ApiError(msg, response.status);
   }
 
   const text = await response.text();
@@ -298,7 +318,7 @@ export async function loginClub(email: string, password: string): Promise<LoginR
 
   if (!response.ok) {
     const msg = await extractErrorMessage(response, 'Invalid email or password.');
-    throw new Error(msg);
+    throw new ApiError(msg, response.status);
   }
 
   const data: LoginResponse = await response.json();
