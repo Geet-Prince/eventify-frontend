@@ -1,26 +1,123 @@
 @import "tailwindcss";
 
+@theme {
+  --color-canvas: #090d16;
+  --color-canvas-alt: #0e1422;
+  --color-surface: #141c2e;
+  --color-surface-hover: #1b263e;
+  --color-surface-border: #23314d;
+  --color-surface-border-subtle: #192338;
+
+  --color-brand: #3b82f6;
+  --color-brand-hover: #2563eb;
+  --color-brand-subtle: rgba(59, 130, 246, 0.12);
+
+  --color-accent: #f59e0b;
+  --color-accent-subtle: rgba(245, 158, 11, 0.12);
+
+  --color-text-main: #f8fafc;
+  --color-text-sub: #94a3b8;
+  --color-text-muted: #64748b;
+
+  --color-status-success: #10b981;
+  --color-status-success-subtle: rgba(16, 185, 129, 0.12);
+  --color-status-danger: #f43f5e;
+  --color-status-danger-subtle: rgba(244, 63, 94, 0.12);
+
+  --font-sans: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --canvas: #090d16;
+  --surface: #141c2e;
+  --surface-border: #23314d;
+  --text-main: #f8fafc;
+  --text-sub: #94a3b8;
+  --brand: #3b82f6;
+  --brand-hover: #2563eb;
+  --accent: #f59e0b;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background-color: var(--canvas);
+  color: var(--text-main);
+  font-family: var(--font-sans);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background-image: 
+    radial-gradient(at 15% 15%, rgba(59, 130, 246, 0.08) 0px, transparent 50%),
+    radial-gradient(at 85% 25%, rgba(99, 102, 241, 0.07) 0px, transparent 50%),
+    radial-gradient(at 50% 90%, rgba(14, 165, 233, 0.05) 0px, transparent 50%);
+  background-attachment: fixed;
+}
+
+/* Tabular figures for dates, IDs, roll numbers */
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Event ticket pass motif: perforated divider between body and QR stub */
+.ticket-perforation {
+  position: relative;
+  border-top: 2px dashed #23314d;
+}
+
+.ticket-perforation::before,
+.ticket-perforation::after {
+  content: "";
+  position: absolute;
+  top: -10px;
+  width: 20px;
+  height: 20px;
+  background-color: var(--canvas);
+  border-radius: 50%;
+  border: 1px solid #23314d;
+}
+
+.ticket-perforation::before {
+  left: -22px;
+  border-left-color: transparent;
+}
+
+.ticket-perforation::after {
+  right: -22px;
+  border-right-color: transparent;
+}
+
+/* Scanner HUD viewfinder reticle corners */
+.scanner-reticle {
+  position: relative;
+}
+
+.scanner-reticle::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border: 2px solid transparent;
+  pointer-events: none;
+}
+
+/* Subtle glassmorphism */
+.glass-panel {
+  background: rgba(20, 28, 46, 0.75);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(35, 49, 77, 0.8);
+}
+
+/* Smooth custom scrollbars */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #090d16;
+}
+::-webkit-scrollbar-thumb {
+  background: #23314d;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #3b82f6;
 }
