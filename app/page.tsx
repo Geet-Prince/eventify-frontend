@@ -272,6 +272,7 @@ function RegistrationForm() {
                 type="text"
                 name="eventId"
                 required
+                suppressHydrationWarning
                 placeholder="Paste event UUID..."
                 value={formData.eventId}
                 onChange={handleChange}
@@ -339,6 +340,7 @@ function RegistrationForm() {
               type="text"
               name="attendeeName"
               required
+              suppressHydrationWarning
               placeholder="e.g. Alex Johnson"
               value={formData.attendeeName}
               onChange={handleChange}
@@ -352,6 +354,7 @@ function RegistrationForm() {
               type="email"
               name="attendeeEmail"
               required
+              suppressHydrationWarning
               placeholder="alex@student.edu"
               value={formData.attendeeEmail}
               onChange={handleChange}
@@ -366,6 +369,7 @@ function RegistrationForm() {
                 type="text"
                 name="rollNumber"
                 required
+                suppressHydrationWarning
                 placeholder="21CS045"
                 value={formData.rollNumber}
                 onChange={handleChange}
