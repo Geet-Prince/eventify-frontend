@@ -228,9 +228,6 @@ export default function DashboardPage() {
         isPublic,
         allowedDepartments: selectedDepts.join(','),
         allowedStudyYears: selectedYears.join(','),
-        club: {
-          id: clubId || (events.find((e) => e.id === editingEventId)?.club?.id ?? ''),
-        },
       };
 
       if (editingEventId) {

@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { registerForEvent, getAllEvents, EventItem } from './services/api';
+import { registerForEvent, getAllEvents, EventItem, Registration } from './services/api';
 import { CAMPUS_DEPARTMENTS, STUDY_YEARS } from './constants/departments';
 import { getEventStatusDetails, isRegistrationOpen } from './utils/eventStatus';
 
@@ -27,13 +27,7 @@ function RegistrationForm() {
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [ticket, setTicket] = useState<{
-    id?: string;
-    studentName?: string;
-    studentEmail?: string;
-    qrCodeBase64?: string;
-    [key: string]: unknown;
-  } | null>(null);
+  const [ticket, setTicket] = useState<Registration | null>(null);
 
   // Load public events for the dropdown
   useEffect(() => {
@@ -99,13 +93,7 @@ function RegistrationForm() {
       };
 
       const result = await registerForEvent(payload);
-      setTicket(result as {
-        id?: string;
-        studentName?: string;
-        studentEmail?: string;
-        qrCodeBase64?: string;
-        [key: string]: unknown;
-      });
+      setTicket(result);
     } catch (err: unknown) {
       if (err instanceof Error) {
         setError(err.message || 'An error occurred during registration.');

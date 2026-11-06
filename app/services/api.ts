@@ -1,10 +1,25 @@
-export const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080/eventify';
+// Production and local API Base URL resolution
+const RAW_API_URL =
+  process.env.NEXT_PUBLIC_API_BASE_URL ||
+  process.env.NEXT_PUBLIC_API_URL ||
+  'https://eventify-backend-bcb0.onrender.com';
+
+const cleanBaseUrl = RAW_API_URL.replace(/\/+$/, '');
+export const API_BASE_URL = cleanBaseUrl.endsWith('/eventify')
+  ? cleanBaseUrl
+  : `${cleanBaseUrl}/eventify`;
 
 // Token & Session helpers (SSR-safe)
 export const getAuthToken = (): string | null => {
   if (typeof window !== 'undefined') {
     return localStorage.getItem('club_token');
+  }
+  return null;
+};
+
+export const getRefreshToken = (): string | null => {
+  if (typeof window !== 'undefined') {
+    return localStorage.getItem('club_refresh_token');
   }
   return null;
 };
@@ -16,6 +31,13 @@ export const getStoredClubId = (): string | null => {
   return null;
 };
 
+export const getStoredClubRole = (): string | null => {
+  if (typeof window !== 'undefined') {
+    return localStorage.getItem('club_role');
+  }
+  return null;
+};
+
 export const getStoredClubEmail = (): string | null => {
   if (typeof window !== 'undefined') {
     return localStorage.getItem('club_email');
@@ -23,11 +45,23 @@ export const getStoredClubEmail = (): string | null => {
   return null;
 };
 
-export const setAuthSession = (token: string, clubId?: string, email?: string): void => {
+export const setAuthSession = (
+  token: string,
+  refreshToken?: string,
+  clubId?: string,
+  role?: string,
+  email?: string
+): void => {
   if (typeof window !== 'undefined') {
     localStorage.setItem('club_token', token);
+    if (refreshToken) {
+      localStorage.setItem('club_refresh_token', refreshToken);
+    }
     if (clubId) {
       localStorage.setItem('club_id', clubId);
+    }
+    if (role) {
+      localStorage.setItem('club_role', role);
     }
     if (email) {
       localStorage.setItem('club_email', email);
@@ -38,7 +72,9 @@ export const setAuthSession = (token: string, clubId?: string, email?: string): 
 export const clearAuthSession = (): void => {
   if (typeof window !== 'undefined') {
     localStorage.removeItem('club_token');
+    localStorage.removeItem('club_refresh_token');
     localStorage.removeItem('club_id');
+    localStorage.removeItem('club_role');
     localStorage.removeItem('club_email');
   }
 };
@@ -56,6 +92,81 @@ async function extractErrorMessage(response: Response, fallback: string): Promis
   } catch {
     return fallback;
   }
+}
+
+// Token Refresh Mutex to handle multiple concurrent 401s
+let refreshPromise: Promise<string | null> | null = null;
+
+export async function refreshAuthToken(): Promise<string | null> {
+  const refreshToken = getRefreshToken();
+  if (!refreshToken) {
+    clearAuthSession();
+    return null;
+  }
+
+  if (refreshPromise) {
+    return refreshPromise;
+  }
+
+  refreshPromise = (async () => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/auth/refresh`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refreshToken }),
+      });
+
+      if (!response.ok) {
+        clearAuthSession();
+        return null;
+      }
+
+      const data = await response.json();
+      const newToken: string | undefined = data.token || data.accessToken;
+      if (newToken) {
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('club_token', newToken);
+          if (data.refreshToken) {
+            localStorage.setItem('club_refresh_token', data.refreshToken);
+          }
+        }
+        return newToken;
+      }
+
+      clearAuthSession();
+      return null;
+    } catch {
+      clearAuthSession();
+      return null;
+    } finally {
+      refreshPromise = null;
+    }
+  })();
+
+  return refreshPromise;
+}
+
+// Authenticated fetch wrapper with automatic Authorization header and 401 token refresh interceptor
+export async function fetchWithAuth(url: string, options: RequestInit = {}): Promise<Response> {
+  let token = getAuthToken();
+  const headers = new Headers(options.headers || {});
+
+  if (token && !headers.has('Authorization')) {
+    headers.set('Authorization', `Bearer ${token}`);
+  }
+
+  let response = await fetch(url, { ...options, headers });
+
+  // When token expires (401), request a new token and retry the original call
+  if (response.status === 401) {
+    const newToken = await refreshAuthToken();
+    if (newToken) {
+      headers.set('Authorization', `Bearer ${newToken}`);
+      response = await fetch(url, { ...options, headers });
+    }
+  }
+
+  return response;
 }
 
 // Interfaces
@@ -95,7 +206,7 @@ export interface CreateEventPayload {
   imageLink?: string;
   allowedDepartments?: string;
   allowedStudyYears?: string;
-  club: {
+  club?: {
     id: string;
   };
 }
@@ -113,17 +224,34 @@ export interface RegistrationPayload {
 
 export interface Registration {
   id: string;
-  attendeeName: string;
-  attendeeEmail: string;
+  studentName?: string;
+  studentEmail?: string;
+  attendeeName?: string;
+  attendeeEmail?: string;
   rollNumber?: string;
   department?: string;
   studyYear?: number;
   checkedIn: boolean;
+  qrCodeBase64?: string;
   registeredAt?: string;
 }
 
+export interface LoginResponse {
+  token: string;
+  refreshToken?: string;
+  clubId?: string;
+  role?: string;
+  [key: string]: unknown;
+}
+
+export interface RegisterResponse {
+  verificationToken?: string;
+  message?: string;
+  [key: string]: unknown;
+}
+
 // 1. Auth APIs
-export async function registerClub(name: string, email: string, password: string) {
+export async function registerClub(name: string, email: string, password: string): Promise<RegisterResponse> {
   const response = await fetch(`${API_BASE_URL}/auth/register`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -138,7 +266,30 @@ export async function registerClub(name: string, email: string, password: string
   return response.json();
 }
 
-export async function loginClub(email: string, password: string) {
+export async function verifyEmail(verificationToken: string): Promise<string> {
+  const response = await fetch(
+    `${API_BASE_URL}/auth/verify?token=${encodeURIComponent(verificationToken.trim())}`,
+    {
+      method: 'GET',
+      headers: { 'Content-Type': 'application/json' },
+    }
+  );
+
+  if (!response.ok) {
+    const msg = await extractErrorMessage(response, 'Email verification failed or token is invalid.');
+    throw new Error(msg);
+  }
+
+  const text = await response.text();
+  try {
+    const data = JSON.parse(text);
+    return data.message || text;
+  } catch {
+    return text || 'Email verified successfully!';
+  }
+}
+
+export async function loginClub(email: string, password: string): Promise<LoginResponse> {
   const response = await fetch(`${API_BASE_URL}/auth/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -150,9 +301,9 @@ export async function loginClub(email: string, password: string) {
     throw new Error(msg);
   }
 
-  const data = await response.json();
+  const data: LoginResponse = await response.json();
   if (data.token) {
-    setAuthSession(data.token, data.clubId, email);
+    setAuthSession(data.token, data.refreshToken, data.clubId, data.role, email);
   }
   return data;
 }
@@ -188,14 +339,15 @@ export async function getEventById(id: string): Promise<EventItem> {
 }
 
 export async function createEvent(payload: CreateEventPayload): Promise<EventItem> {
-  const token = getAuthToken();
-  const response = await fetch(`${API_BASE_URL}/events`, {
+  // Requirement 4: Do NOT send club: { id: ... } in the body.
+  // The backend automatically extracts and assigns the club from the authenticated JWT token.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { club, ...eventData } = payload;
+
+  const response = await fetchWithAuth(`${API_BASE_URL}/events`, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-    body: JSON.stringify(payload),
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(eventData),
   });
 
   if (!response.ok) {
@@ -207,14 +359,13 @@ export async function createEvent(payload: CreateEventPayload): Promise<EventIte
 }
 
 export async function updateEvent(id: string, payload: Partial<CreateEventPayload>): Promise<EventItem> {
-  const token = getAuthToken();
-  const response = await fetch(`${API_BASE_URL}/events/${id}`, {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { club, ...eventData } = payload;
+
+  const response = await fetchWithAuth(`${API_BASE_URL}/events/${id}`, {
     method: 'PUT',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-    body: JSON.stringify(payload),
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(eventData),
   });
 
   if (!response.ok) {
@@ -226,12 +377,8 @@ export async function updateEvent(id: string, payload: Partial<CreateEventPayloa
 }
 
 export async function deleteEvent(id: string): Promise<void> {
-  const token = getAuthToken();
-  const response = await fetch(`${API_BASE_URL}/events/${id}`, {
+  const response = await fetchWithAuth(`${API_BASE_URL}/events/${id}`, {
     method: 'DELETE',
-    headers: {
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
   });
 
   if (!response.ok) {
@@ -241,7 +388,7 @@ export async function deleteEvent(id: string): Promise<void> {
 }
 
 // 3. Registrations APIs
-export async function registerForEvent(payload: RegistrationPayload) {
+export async function registerForEvent(payload: RegistrationPayload): Promise<Registration> {
   const response = await fetch(`${API_BASE_URL}/registrations`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -257,13 +404,12 @@ export async function registerForEvent(payload: RegistrationPayload) {
 }
 
 export async function checkInAttendee(registrationId: string): Promise<string> {
-  const token = getAuthToken();
-  const response = await fetch(`${API_BASE_URL}/registrations/${registrationId}/check-in`, {
-    method: 'PUT',
-    headers: {
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-  });
+  const response = await fetchWithAuth(
+    `${API_BASE_URL}/registrations/${registrationId}/check-in`,
+    {
+      method: 'PUT',
+    }
+  );
 
   if (!response.ok) {
     const msg = await extractErrorMessage(response, 'Check-in failed.');
@@ -274,12 +420,9 @@ export async function checkInAttendee(registrationId: string): Promise<string> {
 }
 
 export async function getEventRegistrations(eventId: string): Promise<Registration[]> {
-  const token = getAuthToken();
-  const response = await fetch(`${API_BASE_URL}/registrations/event/${eventId}`, {
-    headers: {
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-  });
+  const response = await fetchWithAuth(
+    `${API_BASE_URL}/registrations/event/${eventId}`
+  );
 
   if (!response.ok) {
     const msg = await extractErrorMessage(response, 'Failed to load attendees.');
@@ -304,7 +447,7 @@ export async function downloadEventCSV(
     params.toString() ? `?${params.toString()}` : ''
   }`;
 
-  const response = await fetch(url);
+  const response = await fetchWithAuth(url);
   if (!response.ok) {
     const msg = await extractErrorMessage(response, 'Failed to download CSV report.');
     throw new Error(msg);
