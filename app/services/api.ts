@@ -2,7 +2,7 @@
 const RAW_API_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL ||
   process.env.NEXT_PUBLIC_API_URL ||
-  'https://eventify-backend-bcb0.onrender.com';
+  'https://eventify-api.geetprince.me';
 
 const cleanBaseUrl = RAW_API_URL.replace(/\/+$/, '');
 export const API_BASE_URL = cleanBaseUrl.endsWith('/eventify')
