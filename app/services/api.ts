@@ -1,13 +1,22 @@
 // Production and local API Base URL resolution
 const RAW_API_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL ||
   process.env.NEXT_PUBLIC_API_URL ||
+  process.env.NEXT_PUBLIC_API_BASE_URL ||
   'https://eventify-api.geetprince.me';
 
+// Ensure no trailing slashes
 const cleanBaseUrl = RAW_API_URL.replace(/\/+$/, '');
 export const API_BASE_URL = cleanBaseUrl.endsWith('/eventify')
   ? cleanBaseUrl
   : `${cleanBaseUrl}/eventify`;
+
+// Central fetch wrapper with credentials included by default
+export const apiFetch = async (input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> => {
+  return fetch(input, {
+    credentials: 'include',
+    ...init,
+  });
+};
 
 // Token & Session helpers (SSR-safe)
 export const getAuthToken = (): string | null => {
@@ -125,7 +134,7 @@ export async function refreshAuthToken(): Promise<string | null> {
 
   refreshPromise = (async () => {
     try {
-      const response = await fetch(`${API_BASE_URL}/auth/refresh`, {
+      const response = await apiFetch(`${API_BASE_URL}/auth/refresh`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ refreshToken }),
@@ -170,14 +179,20 @@ export async function fetchWithAuth(url: string, options: RequestInit = {}): Pro
     headers.set('Authorization', `Bearer ${token}`);
   }
 
-  let response = await fetch(url, { ...options, headers });
+  const fetchOptions: RequestInit = {
+    credentials: 'include',
+    ...options,
+    headers,
+  };
+
+  let response = await fetch(url, fetchOptions);
 
   // When token expires (401), request a new token and retry the original call
   if (response.status === 401) {
     const newToken = await refreshAuthToken();
     if (newToken) {
       headers.set('Authorization', `Bearer ${newToken}`);
-      response = await fetch(url, { ...options, headers });
+      response = await fetch(url, { ...fetchOptions, headers });
     }
   }
 
@@ -266,7 +281,7 @@ export interface RegisterResponse {
 
 // 1. Auth APIs
 export async function registerClub(name: string, email: string, password: string): Promise<RegisterResponse> {
-  const response = await fetch(`${API_BASE_URL}/auth/register`, {
+  const response = await apiFetch(`${API_BASE_URL}/auth/register`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ name, email, password }),
@@ -285,7 +300,7 @@ export async function registerClub(name: string, email: string, password: string
 }
 
 export async function verifyEmail(verificationToken: string): Promise<string> {
-  const response = await fetch(
+  const response = await apiFetch(
     `${API_BASE_URL}/auth/verify?token=${encodeURIComponent(verificationToken.trim())}`,
     {
       method: 'GET',
@@ -310,7 +325,7 @@ export async function verifyEmail(verificationToken: string): Promise<string> {
 }
 
 export async function loginClub(email: string, password: string): Promise<LoginResponse> {
-  const response = await fetch(`${API_BASE_URL}/auth/login`, {
+  const response = await apiFetch(`${API_BASE_URL}/auth/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ email, password }),
@@ -330,14 +345,14 @@ export async function loginClub(email: string, password: string): Promise<LoginR
 
 // Club Info
 export async function getAllClubs(): Promise<Club[]> {
-  const response = await fetch(`${API_BASE_URL}/clubs`);
+  const response = await apiFetch(`${API_BASE_URL}/clubs`);
   if (!response.ok) return [];
   return response.json();
 }
 
 // 2. Events APIs
 export async function getAllEvents(): Promise<EventItem[]> {
-  const response = await fetch(`${API_BASE_URL}/events`, {
+  const response = await apiFetch(`${API_BASE_URL}/events`, {
     headers: { 'Content-Type': 'application/json' },
   });
 
@@ -350,7 +365,7 @@ export async function getAllEvents(): Promise<EventItem[]> {
 }
 
 export async function getEventById(id: string): Promise<EventItem> {
-  const response = await fetch(`${API_BASE_URL}/events/${id}`);
+  const response = await apiFetch(`${API_BASE_URL}/events/${id}`);
   if (!response.ok) {
     const msg = await extractErrorMessage(response, 'Event not found.');
     throw new Error(msg);
@@ -409,7 +424,7 @@ export async function deleteEvent(id: string): Promise<void> {
 
 // 3. Registrations APIs
 export async function registerForEvent(payload: RegistrationPayload): Promise<Registration> {
-  const response = await fetch(`${API_BASE_URL}/registrations`, {
+  const response = await apiFetch(`${API_BASE_URL}/registrations`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
