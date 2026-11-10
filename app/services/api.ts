@@ -364,6 +364,36 @@ export async function getAllEvents(): Promise<EventItem[]> {
   return response.json();
 }
 
+export async function getMyEvents(): Promise<EventItem[]> {
+  const response = await fetchWithAuth(`${API_BASE_URL}/events/my-events`, {
+    headers: { 'Content-Type': 'application/json' },
+  });
+
+  if (!response.ok) {
+    const msg = await extractErrorMessage(response, "Failed to fetch club's events.");
+    throw new Error(msg);
+  }
+
+  return response.json();
+}
+
+export async function publishEvent(id: string, isPublic: boolean = true): Promise<EventItem> {
+  const response = await fetchWithAuth(
+    `${API_BASE_URL}/events/${id}/publish?isPublic=${isPublic}`,
+    {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+    }
+  );
+
+  if (!response.ok) {
+    const msg = await extractErrorMessage(response, 'Failed to update event publish status.');
+    throw new Error(msg);
+  }
+
+  return response.json();
+}
+
 export async function getEventById(id: string): Promise<EventItem> {
   const response = await apiFetch(`${API_BASE_URL}/events/${id}`);
   if (!response.ok) {

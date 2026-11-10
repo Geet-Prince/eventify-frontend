@@ -6,12 +6,15 @@ import {
   EventItem,
   Registration,
   getAllEvents,
+  getMyEvents,
+  publishEvent,
   createEvent,
   updateEvent,
   deleteEvent,
   downloadEventCSV,
   getEventRegistrations,
   clearAuthSession,
+  getAuthToken,
 } from '../services/api';
 import { CAMPUS_DEPARTMENTS, DEPARTMENT_CODES, STUDY_YEARS } from '../constants/departments';
 import { getEventStatusDetails } from '../utils/eventStatus';
@@ -57,6 +60,8 @@ export default function DashboardPage() {
 
   // View filter: 'my' | 'all'
   const [activeTab, setActiveTab] = useState<'all' | 'my'>('all');
+  const [publicationFilter, setPublicationFilter] = useState<'all' | 'published' | 'draft'>('all');
+  const [publishingEventId, setPublishingEventId] = useState<string | null>(null);
 
   // Events list state
   const [events, setEvents] = useState<EventItem[]>([]);
@@ -103,11 +108,12 @@ export default function DashboardPage() {
     setTimeout(() => setNotification(null), 5000);
   };
 
-  // Fetch all events
+  // Fetch club's events (or all public events if unauthenticated)
   const loadEvents = useCallback(async () => {
     setLoadingEvents(true);
     try {
-      const data = await getAllEvents();
+      const currentToken = getAuthToken();
+      const data = currentToken ? await getMyEvents() : await getAllEvents();
       setEvents(data);
     } catch (err: unknown) {
       if (err instanceof Error) {
@@ -120,7 +126,10 @@ export default function DashboardPage() {
 
   useEffect(() => {
     let ignore = false;
-    getAllEvents()
+    const currentToken = getAuthToken();
+    const fetcher = currentToken ? getMyEvents() : getAllEvents();
+
+    fetcher
       .then((data) => {
         if (!ignore) {
           setEvents(data);
@@ -279,6 +288,34 @@ export default function DashboardPage() {
     }
   };
 
+  // Publish Draft Event
+  const handlePublishEvent = async (id: string, eventName: string) => {
+    if (!token) {
+      showNotification('error', 'Please log in to publish an event.');
+      return;
+    }
+
+    setPublishingEventId(id);
+    try {
+      await publishEvent(id, true);
+      // On success, update local state to change event badge to "Published" and notify user
+      setEvents((prev) =>
+        prev.map((ev) =>
+          ev.id === id ? { ...ev, isPublic: true, public: true } : ev
+        )
+      );
+      showNotification('success', `Event "${eventName}" published successfully!`);
+    } catch (err: unknown) {
+      if (err instanceof Error) {
+        showNotification('error', err.message || 'Failed to publish event.');
+      } else {
+        showNotification('error', 'Failed to publish event.');
+      }
+    } finally {
+      setPublishingEventId(null);
+    }
+  };
+
   // Trigger Download CSV
   const handleDownloadCsv = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -334,6 +371,8 @@ export default function DashboardPage() {
   };
 
   const myEventsCount = events.filter((ev) => isOwner(ev)).length;
+  const publishedCount = events.filter((ev) => ev.isPublic !== false).length;
+  const draftsCount = events.filter((ev) => ev.isPublic === false).length;
 
   const filteredEvents = events.filter((ev) => {
     const matchesSearch =
@@ -343,7 +382,13 @@ export default function DashboardPage() {
 
     if (!matchesSearch) return false;
     if (activeTab === 'my') {
-      return isOwner(ev);
+      if (!isOwner(ev)) return false;
+    }
+    if (publicationFilter === 'published' && ev.isPublic === false) {
+      return false;
+    }
+    if (publicationFilter === 'draft' && ev.isPublic !== false) {
+      return false;
     }
     return true;
   });
@@ -432,38 +477,61 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* Filter Tabs for All vs My Events */}
+        {/* Filter Tabs for All vs Published vs Drafts */}
         {token && (
-          <div className="flex border-b border-[#253146] space-x-6 text-xs font-medium pt-2">
-            <button
-              type="button"
-              onClick={() => setActiveTab('all')}
-              className={`pb-3 transition flex items-center gap-2 cursor-pointer ${
-                activeTab === 'all'
-                  ? 'border-b-2 border-[#3b6bf6] text-[#3b6bf6] font-semibold'
-                  : 'text-[#94a3b8] hover:text-[#f8fafc]'
-              }`}
-            >
-              <span>All Campus Events</span>
-              <span className="px-2 py-0.5 rounded-full text-[10px] bg-[#0d1117] text-[#94a3b8] border border-[#253146]">
-                {events.length}
-              </span>
-            </button>
+          <div className="flex flex-wrap items-center justify-between border-b border-[#253146] text-xs font-medium pt-2 gap-4">
+            <div className="flex space-x-6">
+              <button
+                type="button"
+                onClick={() => setPublicationFilter('all')}
+                className={`pb-3 transition flex items-center gap-2 cursor-pointer ${
+                  publicationFilter === 'all'
+                    ? 'border-b-2 border-[#3b6bf6] text-[#3b6bf6] font-semibold'
+                    : 'text-[#94a3b8] hover:text-[#f8fafc]'
+                }`}
+              >
+                <span>All Events</span>
+                <span className="px-2 py-0.5 rounded-full text-[10px] bg-[#0d1117] text-[#94a3b8] border border-[#253146]">
+                  {events.length}
+                </span>
+              </button>
 
-            <button
-              type="button"
-              onClick={() => setActiveTab('my')}
-              className={`pb-3 transition flex items-center gap-2 cursor-pointer ${
-                activeTab === 'my'
-                  ? 'border-b-2 border-[#3b6bf6] text-[#3b6bf6] font-semibold'
-                  : 'text-[#94a3b8] hover:text-[#f8fafc]'
-              }`}
-            >
-              <span>My Club Events</span>
-              <span className="px-2 py-0.5 rounded-full text-[10px] bg-[#3b6bf6]/15 text-[#3b6bf6] border border-[#3b6bf6]/30">
-                {myEventsCount}
-              </span>
-            </button>
+              <button
+                type="button"
+                onClick={() => setPublicationFilter('published')}
+                className={`pb-3 transition flex items-center gap-2 cursor-pointer ${
+                  publicationFilter === 'published'
+                    ? 'border-b-2 border-[#10b981] text-[#10b981] font-semibold'
+                    : 'text-[#94a3b8] hover:text-[#f8fafc]'
+                }`}
+              >
+                <span className="flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-[#10b981]"></span>
+                  Published
+                </span>
+                <span className="px-2 py-0.5 rounded-full text-[10px] bg-[#10b981]/15 text-[#10b981] border border-[#10b981]/30">
+                  {publishedCount}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setPublicationFilter('draft')}
+                className={`pb-3 transition flex items-center gap-2 cursor-pointer ${
+                  publicationFilter === 'draft'
+                    ? 'border-b-2 border-[#f59e0b] text-[#f59e0b] font-semibold'
+                    : 'text-[#94a3b8] hover:text-[#f8fafc]'
+                }`}
+              >
+                <span className="flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-[#f59e0b]"></span>
+                  Drafts
+                </span>
+                <span className="px-2 py-0.5 rounded-full text-[10px] bg-[#f59e0b]/15 text-[#f59e0b] border border-[#f59e0b]/30">
+                  {draftsCount}
+                </span>
+              </button>
+            </div>
           </div>
         )}
 
@@ -510,15 +578,17 @@ export default function DashboardPage() {
                           <span className={`text-[10px] font-semibold px-2 py-0.5 rounded border ${statusDetails.badgeClass}`}>
                             {statusDetails.label}
                           </span>
-                          <span
-                            className={`text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded border ${
-                              event.isPublic || event.public
-                                ? 'bg-[#3b6bf6]/10 text-[#3b6bf6] border-[#3b6bf6]/20'
-                                : 'bg-[#0d1117] text-[#94a3b8] border-[#253146]'
-                            }`}
-                          >
-                            {event.isPublic || event.public ? 'Public' : 'Private'}
-                          </span>
+                          {event.isPublic === false ? (
+                            <span className="text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded border bg-[#f59e0b]/15 text-[#f59e0b] border-[#f59e0b]/30 flex items-center gap-1 shadow-xs">
+                              <span className="w-1.5 h-1.5 rounded-full bg-[#f59e0b]"></span>
+                              Draft
+                            </span>
+                          ) : (
+                            <span className="text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded border bg-[#10b981]/15 text-[#10b981] border-[#10b981]/30 flex items-center gap-1 shadow-xs">
+                              <span className="w-1.5 h-1.5 rounded-full bg-[#10b981]"></span>
+                              Published
+                            </span>
+                          )}
                           {isOwner(event) ? (
                             <span className="text-[10px] font-medium px-2 py-0.5 rounded bg-[#10b981]/15 text-[#10b981] border border-[#10b981]/30">
                               Your Club
@@ -637,6 +707,30 @@ export default function DashboardPage() {
                       <div className="flex items-center gap-2">
                         {isOwner(event) ? (
                           <>
+                            {event.isPublic === false && (
+                              <button
+                                type="button"
+                                onClick={() => handlePublishEvent(event.id, event.name)}
+                                disabled={publishingEventId === event.id}
+                                className="px-3 py-1.5 bg-[#10b981]/15 hover:bg-[#10b981]/25 text-[#10b981] border border-[#10b981]/30 rounded-lg text-xs font-semibold transition cursor-pointer disabled:opacity-50 flex items-center gap-1.5 shadow-xs"
+                                title="Publish draft event to campus directory"
+                              >
+                                {publishingEventId === event.id ? (
+                                  <>
+                                    <span className="w-3 h-3 border-2 border-[#10b981] border-t-transparent rounded-full animate-spin"></span>
+                                    Publishing...
+                                  </>
+                                ) : (
+                                  <>
+                                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                    </svg>
+                                    Publish Event
+                                  </>
+                                )}
+                              </button>
+                            )}
+
                             <button
                               onClick={() => openEditModal(event)}
                               className="px-3 py-1.5 bg-[#0d1117] hover:bg-[#1f293d] text-[#f8fafc] rounded-lg text-xs font-medium transition border border-[#253146] cursor-pointer"
